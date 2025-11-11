@@ -1,303 +1,258 @@
-#include <cmath>
 #include <functional>
 #include <memory>
 #include <thread>
+#include <math.h>
 
 #include "cleaning_robot_interfaces/action/cleaning_task.hpp"
+#include "geometry_msgs/msg/twist.hpp"
+#include "turtlesim/msg/pose.hpp"
+
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_action/rclcpp_action.hpp"
-#include "turtlesim/msg/pose.hpp"
-#include "geometry_msgs/msg/twist.hpp"
 #include "rclcpp_components/register_node_macro.hpp"
 
-#include "action_cleaning_robot/visibility_control.h"
 
-
-#define PI 3.14159265
-
-namespace action_cleaning_robot
+namespace cleaning_action
 {
+
 class CleaningActionServer : public rclcpp::Node
 {
 public:
-    using CleaningTask = cleaning_robot_interfaces::action::CleaningTask;
-    using GoalHandleCleaningTask = rclcpp_action::ServerGoalHandle<CleaningTask>;
+  using CleaningTask = cleaning_robot_interfaces::action::CleaningTask;
+  using GoalHandleCleaningTask = rclcpp_action::ServerGoalHandle<CleaningTask>;
 
-    ACTION_CLEANING_ROBOT_PUBLIC
-    explicit CleaningActionServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
-    : Node("cleaning_action_server", options), is_executing(false) {
-        vel_publisher = this->create_publisher<geometry_msgs::msg::Twist>("turtle1/cmd_vel", 10);
-        pose_subscriber = this->create_subscription<turtlesim::msg::Pose>(
-            "/turtle1/pose",
-            10,
-            std::bind(&CleaningActionServer::turtle_pose_callback, this, std::placeholders::_1)
-        );
+  explicit CleaningActionServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions()): Node("cleaning_action_server", options){
+    using namespace std::placeholders;
 
-        auto handle_accepted = [this](const std::shared_ptr<GoalHandleCleaningTask> goal_handle) {
-            is_executing = true;
-            auto execute_in_thread = [this, goal_handle](){return this->execute(goal_handle);};
-            std::thread{execute_in_thread}.detach();
-        };
+    this->action_server_ = rclcpp_action::create_server<CleaningTask>(
+      this, 
+      "cleaning_task",
+      std::bind(&CleaningActionServer::handle_goal, this, _1, _2),
+      std::bind(&CleaningActionServer::handle_cancel, this, _1),
+      std::bind(&CleaningActionServer::handle_accepted, this, _1));
 
-        this->action_server_ = rclcpp_action::create_server<CleaningTask>(
-            this,
-            "cleaning_robot",
-            std::bind(&CleaningActionServer::handle_goal, this, std::placeholders::_1, std::placeholders::_2),
-            std::bind(&CleaningActionServer::handle_cancel, this, std::placeholders::_1),
-            handle_accepted);
-        
-        RCLCPP_INFO(this->get_logger(), "Server created. Ready to accomplish actions...");
-    }
-
-
+    this->cmd_vel_publisher_ = this->create_publisher<geometry_msgs::msg::Twist>("/turtle1/cmd_vel", 1);
+    this->pose_subscription_ = this->create_subscription<turtlesim::msg::Pose>(
+      "/turtle1/pose", 10, std::bind(&CleaningActionServer::pose_update, this, _1));
+    
+    RCLCPP_INFO(this->get_logger(), "CleaningActionServer is ready for executing requests");
+  }
 private:
-    bool is_executing;
-    rclcpp_action::Server<CleaningTask>::SharedPtr action_server_;
-    rclcpp::Subscription<turtlesim::msg::Pose>::SharedPtr pose_subscriber;
-    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr vel_publisher;
-    float cx;
-    float cy;
-    float ctheta;
+  rclcpp_action::Server<CleaningTask>::SharedPtr action_server_;
+  rclcpp::Subscription<turtlesim::msg::Pose>::SharedPtr pose_subscription_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_publisher_;
+  turtlesim::msg::Pose curr_p;
+  double default_anglular_vel = 2 * 3.14;
 
-    float _calc_distance(float x1, float y1, float x2, float y2) {
-        return sqrtf((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
+
+  rclcpp_action::GoalResponse handle_goal(const rclcpp_action::GoalUUID & uuid, 
+                                          std::shared_ptr<const CleaningTask::Goal> goal){
+    RCLCPP_INFO(this->get_logger(), "Received goal request with task_type %s", goal->task_type.c_str());
+    (void)uuid;
+    return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+  }
+
+  rclcpp_action::CancelResponse handle_cancel(const std::shared_ptr<GoalHandleCleaningTask> goal_handle){
+    RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
+    (void)goal_handle;
+    return rclcpp_action::CancelResponse::ACCEPT;
+  }
+
+  void handle_accepted(const std::shared_ptr<GoalHandleCleaningTask> goal_handle){
+    using namespace std::placeholders;
+    // this needs to return quickly to avoid blocking the executor, so spin up a new thread
+    std::thread{std::bind(&CleaningActionServer::execute, this, _1), goal_handle}.detach();
+  }
+
+  void pose_update(const turtlesim::msg::Pose & p){
+    this->curr_p = p;
+  }
+
+  void wait_for_turtle_stop(rclcpp::Rate & waiting_rate){
+    while (this->curr_p.linear_velocity != 0 || this->curr_p.angular_velocity != 0) {
+      waiting_rate.sleep();
+    }
+  }
+
+  double round_n(double x, int n){
+    return round(x * pow(10, n)) / pow(10, n);
+  }
+
+  int clean_circle(double r, 
+                   std::shared_ptr<CleaningTask::Feedback> feedback,
+                   std::shared_ptr<CleaningTask::Result> result,
+                   const std::shared_ptr<GoalHandleCleaningTask> goal_handle){
+    rclcpp::Rate wait_pose_update_rate(1);
+    wait_for_turtle_stop(wait_pose_update_rate);
+
+    geometry_msgs::msg::Twist twist;
+    twist.linear.x = r;
+    twist.linear.y = 0;
+    twist.angular.z = 0;
+    cmd_vel_publisher_->publish(twist);
+    wait_pose_update_rate.sleep();
+    wait_for_turtle_stop(wait_pose_update_rate);
+
+    twist.linear.x = 0;
+    twist.linear.y = 0;
+    twist.angular.z = 1.57;
+    cmd_vel_publisher_->publish(twist);
+    wait_pose_update_rate.sleep();
+    wait_for_turtle_stop(wait_pose_update_rate);
+    
+    twist.linear.y = 0;
+    twist.angular.z = default_anglular_vel;
+    double cleaned_points = 0;
+    double cleaned_radius;
+    double linear_vel = r * default_anglular_vel;
+    while (((linear_vel / default_anglular_vel) > 0.1) && rclcpp::ok()) {
+      if (goal_handle->is_canceling()) {
+        result->success = false;
+        result->cleaned_points = cleaned_points;
+        result->total_distance = cleaned_points + r;
+        return -1;
+      }
+
+      twist.linear.x = linear_vel;
+      cmd_vel_publisher_->publish(twist);
+      wait_pose_update_rate.sleep();
+      cleaned_radius = r - (linear_vel / default_anglular_vel);
+
+      while (this->curr_p.linear_velocity != 0 || this->curr_p.angular_velocity != 0) {
+        feedback->current_x = curr_p.x;
+        feedback->current_y = curr_p.y;
+        cleaned_points += r * default_anglular_vel;
+        feedback->progress_percent = (cleaned_radius / r) * 100;
+        feedback->current_cleaned_points = cleaned_points;
+        goal_handle->publish_feedback(feedback);
+        wait_pose_update_rate.sleep();
+      }
+      
+      linear_vel -= default_anglular_vel * 0.05;
     }
 
-    float _calc_relative_angle(float x1, float y1, float x2, float y2) {
-        if (x1 == x2) { // cos == 0
-            return (y2 > y1) ? (PI / 2.0) : (-PI / 2.0);
-        }
-        float tang = (y2 - y1) / (x2 - x1);
-        float arctang = atan(tang);
-        if (tang > 0) { // I or III coordinate quarter
-            return (x2 > x1) ? arctang : arctang - PI;
-        }
-        else if (tang == 0) { // sin == 0
-            return (x2 > x1) ? 0.0 : (PI - 0.000001);
-        }
-        else { // II or IV coordinate quarter
-            return (x2 > x1) ? arctang : arctang + PI;
-        }
+    result->success = true;
+    result->cleaned_points = cleaned_points;
+    result->total_distance = cleaned_points + r;
+    return 0;
+  }
+
+  double vec_len(double x, double y){
+    return sqrt(x*x + y*y);
+  }
+
+  double angle_between_vectors(double x1, double y1, double x2, double y2){
+    return acos((x1*x2 + y1*y2) / (vec_len(x1, y1) * vec_len(x2, y2)));
+  }
+
+  int return_home(double x, double y,
+                  std::shared_ptr<CleaningTask::Feedback> feedback,
+                  std::shared_ptr<CleaningTask::Result> result,
+                  const std::shared_ptr<GoalHandleCleaningTask> goal_handle){
+    rclcpp::Rate wait_pose_update_rate(1);
+    wait_for_turtle_stop(wait_pose_update_rate);
+    
+    double goal_vec_x = round_n(x - curr_p.x, 3);
+    double goal_vec_y = round_n(y - curr_p.y, 3);
+    double goal_dist = vec_len(goal_vec_x, goal_vec_y);
+    if (goal_dist <= 0.1) {
+      result->success = true;
+      result->cleaned_points = 0;
+      result->total_distance = 0;
+      return 0;
     }
 
-    bool _is_far(float a, float b, float eps) {
-        return (abs(a - b) > eps);
+    double turtle_vec_x = cos(curr_p.theta);
+    double turtle_vec_y = sin(curr_p.theta);
+    double alpha = angle_between_vectors(goal_vec_x, goal_vec_y, turtle_vec_x, turtle_vec_y);
+    double direction = turtle_vec_x * goal_vec_y - turtle_vec_y * goal_vec_x;
+    if (direction < 0) {
+      alpha = -alpha;
     }
 
-    void turtle_pose_callback(turtlesim::msg::Pose::UniquePtr msg) {
-        cx = msg->x;
-        cy = msg->y;
-        ctheta = msg->theta;
+    // Поворот черепахи в сторону точки назначения
+    geometry_msgs::msg::Twist twist;
+    twist.linear.x = twist.linear.y = 0;
+    twist.angular.z = alpha;
+    cmd_vel_publisher_->publish(twist);
+    wait_pose_update_rate.sleep();
+    wait_for_turtle_stop(wait_pose_update_rate);
+    
+    twist.linear.y = 0;
+    twist.angular.z = 0;
+    double rest_dist = goal_dist;
+    rclcpp::Rate check_turtle_pos_rate(3);
+    while ((rest_dist > 0.1) && rclcpp::ok()) {
+      if (goal_handle->is_canceling()) {
+        result->success = false;
+        result->cleaned_points = 0;
+        result->total_distance = goal_dist - rest_dist;
+        return -1;
+      }
+
+      twist.linear.x = rest_dist;
+      cmd_vel_publisher_->publish(twist);
+      check_turtle_pos_rate.sleep();
+
+      while (this->curr_p.linear_velocity != 0 || this->curr_p.angular_velocity != 0) {
+        feedback->current_x = curr_p.x;
+        feedback->current_y = curr_p.y;
+        rest_dist = vec_len(x - curr_p.x, y - curr_p.y);
+        feedback->progress_percent = ((goal_dist - rest_dist) / goal_dist) * 100;
+        feedback->current_cleaned_points = 0;
+        goal_handle->publish_feedback(feedback);
+        check_turtle_pos_rate.sleep();
+      }
+      rest_dist = vec_len(x - curr_p.x, y - curr_p.y);
     }
 
-    void move_to_goal(float px, float py, float ptheta) {
-        geometry_msgs::msg::Twist vel_msg = geometry_msgs::msg::Twist();
-        geometry_msgs::msg::Twist stop_vel_msg = geometry_msgs::msg::Twist();
-        rclcpp::Rate rate(0.7);
-        float relative_angle, dist;
+    result->success = true;
+    result->cleaned_points = 0;
+    result->total_distance = goal_dist - rest_dist;
+    return 0;
+  }
 
-        // if (!(this->_is_far(cx, px, 0.1) || this->_is_far(cy, py, 0.1))) {
-            if (this->_is_far(ctheta, ptheta, 0.01)) {
-                vel_msg.angular.z = (ptheta - ctheta);
-                this->vel_publisher->publish(vel_msg);
-                // RCLCPP_INFO(this->get_logger(), "Rotating turtle to final theta...");
-                rate.sleep();
-                RCLCPP_INFO(this->get_logger(), "\tRotated. Current theta = %f", ctheta);
-            }
-            else {
-                RCLCPP_WARN(this->get_logger(), "All coordinates are equal to goal!");
-            }
-            return;
-        // }
+  void execute(const std::shared_ptr<GoalHandleCleaningTask> goal_handle)
+  {
+    RCLCPP_INFO(this->get_logger(), "Executing goal");
+    rclcpp::Rate loop_rate(1);
+    const auto goal = goal_handle->get_goal();
+    auto feedback = std::make_shared<CleaningTask::Feedback>();
+    auto result = std::make_shared<CleaningTask::Result>();
 
-        relative_angle = this->_calc_relative_angle(cx, cy, px, py);
+    if (goal->task_type != "clean_circle" && goal->task_type != "return_home"){
+      result->success = false;
+      result->cleaned_points = 0;
+      result->total_distance = 0;
+      goal_handle->abort(result);
+      RCLCPP_ERROR(this->get_logger(), "Goal has unexpected task_type: %s", goal->task_type.c_str());
+    } else {
+      int return_code;
+      if (goal->task_type == "clean_circle") {
+        return_code = clean_circle(goal->area_size, feedback, result, goal_handle);
+      } else {
+        return_code = return_home(goal->target_x, goal->target_y, feedback, result, goal_handle);
+      }
 
-        if (this->_is_far(ctheta, relative_angle, 0.01)) {
-            vel_msg.angular.z = (relative_angle - ctheta);
-            this->vel_publisher->publish(vel_msg);
-            // RCLCPP_INFO(this->get_logger(), "Rotating turtle to goal...");
-            rate.sleep();
-            this->vel_publisher->publish(stop_vel_msg);
-            RCLCPP_INFO(this->get_logger(), "\tRotated. Current theta = %f", ctheta);
+      switch (return_code){
+        case -1:{
+          goal_handle->canceled(result);
+          RCLCPP_INFO(this->get_logger(), "Goal canceled");
+          break;
         }
-
-        // if (this->_is_far(cx, px, 0.1) && this->_is_far(cy, py, 0.1)) {
-            vel_msg = geometry_msgs::msg::Twist();
-            dist = _calc_distance(cx, cy, px, py);
-            vel_msg.linear.x = dist;
-            this->vel_publisher->publish(vel_msg);
-            // RCLCPP_INFO(this->get_logger(), "Moving turtle to goal...");
-            rate.sleep();
-            this->vel_publisher->publish(stop_vel_msg);
-            RCLCPP_INFO(this->get_logger(), "\tMoved. Current: x = %f, y = %f", cx, cy);
-        // }
-
-        if (this->_is_far(ctheta, ptheta, 0.01)) {
-            vel_msg = geometry_msgs::msg::Twist();
-            vel_msg.angular.z = (ptheta - relative_angle);
-            this->vel_publisher->publish(vel_msg);
-            // RCLCPP_INFO(this->get_logger(), "Rotating turtle to final theta...");
-            rate.sleep();
-            this->vel_publisher->publish(stop_vel_msg);
-            RCLCPP_INFO(this->get_logger(), "\tRotated. Delta theta = %f", ptheta - relative_angle);
+        case 0:{
+          if (rclcpp::ok()) {
+            goal_handle->succeed(result);
+            RCLCPP_INFO(this->get_logger(), "Goal succeeded");
+          }
+          break;
         }
+        default: break;
+      }
     }
+  }
+};  // class CleaningActionServer
 
-    rclcpp_action::GoalResponse handle_goal(
-        const rclcpp_action::GoalUUID & uuid,
-        std::shared_ptr<const CleaningTask::Goal> goal) {
-        RCLCPP_INFO(this->get_logger(), "Received goal request with order %s", goal->task_type.c_str());
-        (void)uuid;
-        if (is_executing) {
-            RCLCPP_ERROR(this->get_logger(), "Reject goal for a reason: another goal is executing");
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-        
-        if (goal->task_type == std::string("clean_square")) {
-            if (goal->area_size <= 0) {
-                RCLCPP_ERROR(this->get_logger(), "Reject goal for a reason: incorrect area_size");
-                return rclcpp_action::GoalResponse::REJECT;
-            }
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-        }
-        else if (goal->task_type == std::string("clean_circle")) {
-            RCLCPP_ERROR(this->get_logger(), "Reject goal for a reason: goal \'clean_circle\' is not supported");
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-        else if (goal->task_type == std::string("return_home")) {
-            return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
-        }
-        else {
-            RCLCPP_ERROR(this->get_logger(), "Reject goal for a reason: unknown goal");
-            return rclcpp_action::GoalResponse::REJECT;
-        }
-    }
+}  // namespace cleaning_action
 
-    rclcpp_action::CancelResponse handle_cancel(const std::shared_ptr<GoalHandleCleaningTask> goal_handle) {
-        RCLCPP_INFO(this->get_logger(), "Received request to cancel goal");
-        (void)goal_handle;
-        if (is_executing) {
-            return rclcpp_action::CancelResponse::ACCEPT;
-        }
-        RCLCPP_ERROR(this->get_logger(), "Reject cancel for a reason: there is no executing task");
-        return rclcpp_action::CancelResponse::REJECT;
-    }
-
-    void _update_feedback(
-        CleaningTask::Feedback::SharedPtr& feedback, int progr, int cnt_p, double curr_x, double curr_y) {
-        feedback->progress_percent = progr;
-        feedback->current_cleaned_points = cnt_p;
-        feedback->current_x = curr_x;
-        feedback->current_y = curr_y;
-    }
-
-    void execute(const std::shared_ptr<GoalHandleCleaningTask> goal_handle) {
-        RCLCPP_INFO(this->get_logger(), "Executing goal");
-        rclcpp::Rate loop_rate(1);
-        const auto goal = goal_handle->get_goal();
-        auto feedback = std::make_shared<CleaningTask::Feedback>();
-        auto result = std::make_shared<CleaningTask::Result>();
-        float total_dist = 0, lx, ly;
-        if (goal->task_type == std::string("return_home")) {
-            RCLCPP_INFO(this->get_logger(), "Start returning home");
-            float px = goal->target_x;
-            float py = goal->target_y;
-            float gx, gy;
-            float dist = _calc_distance(cx, cy, px, py);
-            float relative_angle = this->_calc_relative_angle(cx, cy, px, py);
-            this->move_to_goal(cx, cy, relative_angle);
-            this->_update_feedback(feedback, 20, 0, cx, cy);
-            goal_handle->publish_feedback(feedback);
-            loop_rate.sleep();
-            RCLCPP_INFO(this->get_logger(), "Stage 1: x = %f y = %f t = %f", cx, cy, ctheta);
-            for (int i = 1; i < 5; i++) {
-                if (goal_handle->is_canceling()) {
-                    result->success = false;
-                    result->cleaned_points = 0;
-                    result->total_distance = (double)total_dist;
-                    goal_handle->canceled(result);
-                    is_executing = false;
-                    RCLCPP_INFO(this->get_logger(), "Goal canceled");
-                    return;
-                }
-                lx = cx;
-                ly = cy;
-                gx = cx + (dist / 4.0) * cosf(relative_angle);
-                gy = cy + (dist / 4.0) * sinf(relative_angle);
-                this->move_to_goal(gx, gy, relative_angle);
-                this->_update_feedback(feedback, 20 + 20 * i, 0, cx, cy);
-                goal_handle->publish_feedback(feedback);
-                total_dist += this->_calc_distance(lx, ly, cx, cy);
-                loop_rate.sleep();
-                RCLCPP_INFO(this->get_logger(), "Stage %d: x = %f y = %f t = %f", i + 1, cx, cy, ctheta);
-            }
-            if (rclcpp::ok()) {
-                if (!(this->_is_far(cx, px, 0.1) || this->_is_far(cy, py, 0.1))) {
-                    result->success = true;
-                    RCLCPP_INFO(this->get_logger(), "Goal succeeded");
-                }
-                else {
-                    result->success = false;
-                    RCLCPP_INFO(this->get_logger(), "Goal failed");
-                }
-                result->cleaned_points = 0;
-                result->total_distance = (double)total_dist;
-                goal_handle->succeed(result);
-            }
-        }
-        else {
-            RCLCPP_INFO(this->get_logger(), "Start cleaning square");
-            float area_size = (float)(goal->area_size);
-            float lux = cx, luy = cy; // left up
-            float rbx = lux + area_size; // right bottom
-            float delta = 0.5;
-            int n_lines = ceilf(area_size / delta);
-            int curr_line = 0;
-            lx = cx;
-            ly = cy;
-            this->move_to_goal(rbx, luy, -PI / 2.0);
-            total_dist += this->_calc_distance(lx, ly, cx, cy);
-            curr_line++;
-            this->_update_feedback(
-                feedback, curr_line * 100 / n_lines,
-                (int)((float)curr_line * (float)n_lines * delta),
-                cx, cy
-            );
-            goal_handle->publish_feedback(feedback);
-            loop_rate.sleep();
-            bool is_inv;
-            for(; curr_line < n_lines; curr_line++) {
-                is_inv = curr_line % 2;
-                lx = cx;
-                ly = cy;
-                this->move_to_goal(
-                    cx, cy + delta,
-                    is_inv ? PI - 0.000001 : 0
-                );
-                total_dist += this->_calc_distance(lx, ly, cx, cy);
-                lx = cx;
-                ly = cy;
-                this->move_to_goal(is_inv ? lux : rbx, cy, -PI / 2.0);
-                total_dist += this->_calc_distance(lx, ly, cx, cy);
-                this->_update_feedback(
-                    feedback, curr_line * 100 / n_lines,
-                    (int)((float)curr_line * (float)n_lines * delta),
-                    cx, cy
-                );
-                goal_handle->publish_feedback(feedback);
-                loop_rate.sleep();
-            }
-            if (rclcpp::ok()) {
-                result->success = true;
-                result->cleaned_points = (int)((float)curr_line * (float)n_lines * delta);
-                result->total_distance = (double)total_dist;
-                goal_handle->succeed(result);
-            }
-        }
-        is_executing = false;
-    }
-}; // class CleaningActionServer
-
-} // namespace action_cleaning_robot
-
-RCLCPP_COMPONENTS_REGISTER_NODE(action_cleaning_robot::CleaningActionServer)
+RCLCPP_COMPONENTS_REGISTER_NODE(cleaning_action::CleaningActionServer)
