@@ -23,6 +23,10 @@
             </geometry>
             <origin rpy="0 1.57075 0"/>
         </collision>
+        <inertial>
+            <mass value="3"/>
+            <inertia ixx="0.12" ixy="0.0" ixz="0.0" iyy="0.12" iyz="0.0" izz="0.06"/>
+        </inertial>
     </link>
 
 
@@ -41,6 +45,10 @@
                 <cylinder length="0.4" radius="0.05"/>
             </geometry>
         </collision>
+        <inertial>
+            <mass value="0.5"/>
+            <inertia ixx="0.00698" ixy="0.0" ixz="0.0" iyy="0.00698" iyz="0.0" izz="0.000625"/>
+        </inertial>
     </link>
     <joint name="base_to_back_right_leg" type="fixed">
         <parent link="base_link"/>
@@ -62,6 +70,10 @@
             </geometry>
             <origin rpy="1.57 0 0"/>
         </collision>
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="0.00015" ixy="0.0" ixz="0.0" iyy="0.00015" iyz="0.0" izz="0.000125"/>
+        </inertial>
     </link>
     <joint name="back_right_leg_to_wheel" type="continuous">
         <parent link="back_right_leg"/>
@@ -84,6 +96,10 @@
                 <cylinder length="0.4" radius="0.05"/>
             </geometry>
         </collision>
+        <inertial>
+            <mass value="0.5"/>
+            <inertia ixx="0.00698" ixy="0.0" ixz="0.0" iyy="0.00698" iyz="0.0" izz="0.000625"/>
+        </inertial>
     </link>
     <joint name="base_to_back_left_leg" type="fixed">
         <parent link="base_link"/>
@@ -105,6 +121,10 @@
             </geometry>
             <origin rpy="1.57 0 0"/>
         </collision>
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="0.00015" ixy="0.0" ixz="0.0" iyy="0.00015" iyz="0.0" izz="0.000125"/>
+        </inertial>
     </link>
     <joint name="back_left_leg_to_wheel" type="continuous">
         <parent link="back_left_leg"/>
@@ -128,6 +148,10 @@
                 <cylinder length="0.4" radius="0.05"/>
             </geometry>
         </collision>
+        <inertial>
+            <mass value="0.5"/>
+            <inertia ixx="0.00698" ixy="0.0" ixz="0.0" iyy="0.00698" iyz="0.0" izz="0.000625"/>
+        </inertial>
     </link>
     <joint name="base_to_front_right_leg" type="fixed">
         <parent link="base_link"/>
@@ -149,6 +173,10 @@
             </geometry>
             <origin rpy="1.57 0 0"/>
         </collision>
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="0.00015" ixy="0.0" ixz="0.0" iyy="0.00015" iyz="0.0" izz="0.000125"/>
+        </inertial>
     </link>
     <joint name="front_right_leg_to_wheel" type="continuous">
         <parent link="front_right_leg"/>
@@ -172,6 +200,10 @@
                 <cylinder length="0.4" radius="0.05"/>
             </geometry>
         </collision>
+        <inertial>
+            <mass value="0.5"/>
+            <inertia ixx="0.00698" ixy="0.0" ixz="0.0" iyy="0.00698" iyz="0.0" izz="0.000625"/>
+        </inertial>
     </link>
     <joint name="base_to_front_left_leg" type="fixed">
         <parent link="base_link"/>
@@ -193,6 +225,10 @@
             </geometry>
             <origin rpy="1.57 0 0"/>
         </collision>
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="0.00015" ixy="0.0" ixz="0.0" iyy="0.00015" iyz="0.0" izz="0.000125"/>
+        </inertial>
     </link>
     <joint name="front_left_leg_to_wheel" type="continuous">
         <parent link="front_left_leg"/>
@@ -217,6 +253,10 @@
             </geometry>
             <origin xyz="0 0 0.3"/>
         </collision>
+        <inertial>
+            <mass value="0.1"/>
+            <inertia ixx="0.0031225" ixy="0.0" ixz="0.0" iyy="0.0031225" iyz="0.0" izz="0.000245"/>
+        </inertial>
     </link>
     <joint name="base_to_tail" type="fixed">
         <parent link="base_link"/>
@@ -239,6 +279,10 @@
             </geometry>
             <origin xyz="0 0 0.075"/>
         </collision>
+        <inertial>
+            <mass value="0.05"/>
+            <inertia ixx="0.000155" ixy="0.0" ixz="0.0" iyy="0.000155" iyz="0.0" izz="0.0001225"/>
+        </inertial>
     </link>
     <joint name="base_to_neck" type="fixed">
         <parent link="base_link"/>
@@ -261,6 +305,10 @@
             </geometry>
             <origin xyz="0 0 0.15"/>
         </collision>
+        <inertial>
+            <mass value="1"/>
+            <inertia ixx="0.009" ixy="0.0" ixz="0.0" iyy="0.009" iyz="0.0" izz="0.009"/>
+        </inertial>
     </link>
     <joint name="neck_to_head" type="fixed">
         <parent link="neck"/>
