@@ -1,0 +1,196 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="visual_robot">
+
+    <xacro:include filename="$(find gazebo_robot)/robot.gazebo.xacro" />
+
+    <material name="red">
+        <color rgba="0.94 0.39 0.09 1"/>
+    </material>
+    <material name="orange">
+        <color rgba="1 0.65 0 1"/>
+    </material>
+    <material name="black">
+        <color rgba="0 0 0 1"/>
+    </material>
+
+    <!-- Common macros start -->
+    <xacro:macro name="cylinder" params="name leng rad xyz rpy material mass">
+        <link name="${name}">
+            <visual>
+                <geometry>
+                    <cylinder length="${leng}" radius="${rad}"/>
+                </geometry>
+                <origin xyz="${xyz}" rpy="${rpy}"/>
+                <material name="${material}"/>
+            </visual>
+            <collision>
+                <geometry>
+                    <cylinder length="${leng}" radius="${rad}"/>
+                </geometry>
+                <origin xyz="${xyz}" rpy="${rpy}"/>
+            </collision>
+            <inertial>
+                <mass value="${mass}"/>
+                <inertia ixx="${mass*(3*rad*rad+leng*leng)/12}" ixy="0.0" ixz="0.0"
+                    iyy="${mass*(3*rad*rad+leng*leng)/12}" iyz="0.0" izz="${0.5*mass*rad*rad}"/>
+            </inertial>
+        </link>
+    </xacro:macro>
+
+    <xacro:macro name="fixed_joint" params="name parent child xyz rpy">
+        <joint name="${name}" type="fixed">
+            <parent link="${parent}"/>
+            <child link="${child}"/>
+            <origin xyz="${xyz}" rpy="${rpy}"/>
+        </joint>
+    </xacro:macro>
+
+    <xacro:macro name="continuous_joint" params="name parent child axis xyz rpy">
+        <joint name="${name}" type="continuous">
+            <parent link="${parent}"/>
+            <child link="${child}"/>
+            <axis xyz="${axis}"/>
+            <origin xyz="${xyz}" rpy="${rpy}"/>
+        </joint>
+    </xacro:macro>
+
+    <xacro:macro name="sphere" params="name rad xyz rpy material mass">
+        <link name="${name}">
+            <visual>
+                <geometry>
+                    <sphere radius="${rad}"/>
+                </geometry>
+                <origin xyz="${xyz}" rpy="${rpy}"/>
+                <material name="${material}"/>
+            </visual>
+            <collision>
+                <geometry>
+                    <sphere radius="${rad}"/>
+                </geometry>
+                <origin xyz="${xyz}" rpy="${rpy}"/>
+            </collision>
+            <inertial>
+                <mass value="${mass}"/>
+                <inertia ixx="${0.4*mass*rad*rad}" ixy="0.0" ixz="0.0"
+                    iyy="${0.4*mass*rad*rad}" iyz="0.0" izz="${0.4*mass*rad*rad}"/>
+            </inertial>
+        </link>
+    </xacro:macro>
+
+    <!-- Common macros end -->
+
+    <xacro:property name="blen" value="0.6" />
+    <xacro:property name="bwidth" value="0.2" />
+    <xacro:property name="brpy" value="0 1.57075 0" />
+    <xacro:property name="bmass" value="3" />
+
+    <xacro:cylinder name="base_link" leng="${blen}" rad="${bwidth}"
+        xyz="0 0 0" rpy="${brpy}" material="red" mass="${bmass}" />
+    
+    <link name="base_footprint">
+    </link>
+    <joint name="base_footprint_joint" type="fixed">
+        <parent link="base_link"/>
+        <child link="base_footprint"/>
+        <origin xyz="0 0 -0.45" rpy="0 0 0"/>
+    </joint>
+
+    <!-- Start legs -->
+
+    <xacro:property name="llen" value="0.4" />
+    <xacro:property name="lwidth" value="0.05" />
+    <xacro:property name="lmass" value="0.5" />
+    <xacro:property name="lwlen" value="0.1" />
+    <xacro:property name="lwrad" value="0.05" />
+    <xacro:property name="lwmass" value="0.1" />
+
+    <xacro:macro name="leg" params="prefix xyz">
+        <xacro:cylinder name="${prefix}_leg" leng="${llen}" rad="${lwidth}"
+            xyz="0 0 0" rpy="0 0 0" material="orange" mass="${lmass}" />
+        <xacro:fixed_joint name="base_to_${prefix}_leg" parent="base_link"
+            child="${prefix}_leg" xyz="${xyz}" rpy="0 0 0" />
+        <xacro:cylinder name="${prefix}_wheel" leng="${lwlen}" rad="${lwrad}"
+            xyz="0 0 0" rpy="1.57075 0 0" material="orange" mass="${lwmass}" />
+        <xacro:continuous_joint name="${prefix}_leg_to_wheel" parent="${prefix}_leg"
+            child="${prefix}_wheel" axis="0 1 0" xyz="0 0 -0.2" rpy="0 0 0" />
+    </xacro:macro>
+
+    <xacro:leg prefix="back_right" xyz="-0.25 -0.15 -0.2" />
+    <xacro:leg prefix="back_left" xyz="-0.25 0.15 -0.2" />
+    <xacro:leg prefix="front_right" xyz="0.25 -0.15 -0.2" />
+    <xacro:leg prefix="front_left" xyz="0.25 0.15 -0.2" />
+
+    <!-- End legs -->
+
+
+    <!-- Tail -->
+    <xacro:cylinder name="tail" leng="${blen}" rad="${bwidth/3}"
+        xyz="0 0 ${blen/2}" rpy="0 0 0" material="orange" mass="0.1" />
+    <xacro:fixed_joint name="base_to_tail" parent="base_link"
+        child="tail" xyz="-0.25 0 0.05" rpy="0 -0.75 0" />
+
+
+    <!-- Neck -->
+    <xacro:property name="nlen" value="0.15" />
+    <xacro:property name="nwidth" value="0.07" />
+    <xacro:property name="nxyz" value="0 0 ${nlen/2}" />
+    <xacro:property name="nmass" value="0.05" />
+    <xacro:property name="b2lxyz" value="0.25 0 0.1" />
+    <xacro:property name="b2lrpy" value="0 1 0" />
+
+    <xacro:cylinder name="neck" leng="${nlen}" rad="${nwidth}"
+        xyz="${nxyz}" rpy="0 0 0" material="orange" mass="${nmass}" />
+    <xacro:fixed_joint name="base_to_neck" parent="base_link"
+        child="neck" xyz="${b2lxyz}" rpy="${b2lrpy}" />
+
+
+    <!-- Head -->
+    <xacro:property name="hrad" value="0.15" />
+    <xacro:property name="hxyz" value="0 0 ${hrad}" />
+    <xacro:property name="hmass" value="1" />
+    <xacro:property name="n2hxyz" value="-0.05 0 0.13" />
+    <xacro:property name="n2hrpy" value="0 0.57 0" />
+
+    <xacro:sphere name="head" rad="${hrad}"
+        xyz="${hxyz}" rpy="0 0 0" material="red" mass="${hmass}" />
+    <xacro:fixed_joint name="neck_to_head" parent="neck"
+        child="head" xyz="${n2hxyz}" rpy="${n2hrpy}" />
+
+
+    <!-- Start ears -->
+    <xacro:property name="esize" value="0.08 0.08 0.01" />
+
+    <xacro:macro name="ear" params="prefix rpy h2exyz">
+        <link name="${prefix}_ear">
+            <visual>
+                <geometry>
+                    <box size="${esize}"/>
+                </geometry>
+                <origin xyz="0 0 0" rpy="${rpy}"/>
+                <material name="orange"/>
+            </visual>
+        </link>
+        <joint name="head_to_${prefix}_ear" type="fixed">
+            <parent link="head"/>
+            <child link="${prefix}_ear"/>
+            <origin xyz="${h2exyz}" rpy="0 0 0"/>
+        </joint>
+    </xacro:macro>
+
+    <xacro:ear prefix="right" rpy="0 0 -0.25" h2exyz="-0.1 -0.08 0.15" />
+    <xacro:ear prefix="left" rpy="0 0 0.25" h2exyz="-0.1 0.08 0.15" />
+
+    <!-- End ears -->
+    <xacro:property name="erad" value="0.02" />
+
+    <xacro:sphere name="left_eye" rad="${erad}" xyz="0 0 0"
+        rpy="0 0 0" material="black" mass="0.01" />
+    <xacro:fixed_joint name="head_to_left_eye" parent="head"
+        child="left_eye" xyz="-0.08 -0.05 0.25" rpy="0 0 0" />
+    
+    <xacro:sphere name="right_eye" rad="${erad}" xyz="0 0 0"
+        rpy="0 0 0" material="black" mass="0.01" />
+    <xacro:fixed_joint name="head_to_right_eye" parent="head"
+        child="right_eye" xyz="-0.08 0.05 0.25" rpy="0 0 0" />
+
+</robot>

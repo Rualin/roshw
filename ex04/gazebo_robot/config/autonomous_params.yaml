@@ -1,0 +1,31 @@
+# Obstacle avoidance parameters
+obstacle_avoider:
+  ros__parameters:
+    # Motion control
+    max_linear_speed: 0.5     # m/s
+    min_linear_speed: 0.0     # m/s
+    linear_acceleration: 0.2  # m/s²
+    max_angular_speed: 1.0    # rad/s
+    
+    # Safety distances
+    stop_distance: 1.0        # meters - stop completely
+    slow_distance: 1.5        # meters - start slowing down
+    safe_distance: 2.0        # meters - comfortable distance
+    
+    # Sensor parameters
+    scan_front_angle: 30      # degrees to check in front
+    min_valid_range: 0.15     # meters
+    max_valid_range: 10.0     # meters
+    
+    # Control parameters
+    control_rate: 10.0        # Hz
+    obstacle_timeout: 2.0     # seconds before resuming
+    
+    # Visualization
+    visualize_safety_zone: true
+    visualize_obstacles: true
+    publish_path: true
+    
+    # Debug
+    debug_mode: true
+    log_scan_data: false
